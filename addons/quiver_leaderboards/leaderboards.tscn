@@ -5,7 +5,11 @@
 [node name="Leaderboards" type="Node"]
 script = ExtResource("1_2h7vw")
 
-[node name="HTTPRequest" type="HTTPRequest" parent="."]
+[node name="HTTPPostRequest" type="HTTPRequest" parent="."]
+timeout = 10.0
+
+[node name="HTTPGetRequest" type="HTTPRequest" parent="."]
+timeout = 10.0
 
 [node name="RetryTimer" type="Timer" parent="."]
 

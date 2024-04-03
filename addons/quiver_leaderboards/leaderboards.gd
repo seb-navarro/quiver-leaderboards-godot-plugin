@@ -40,10 +40,12 @@ const MAX_UNIX_TIME := 2147483647.0
 var auth_token := ProjectSettings.get_setting("quiver/general/auth_token", "")
 var _failed_queue: Array[Dictionary] = []
 var _failed_queue_file: FileAccess = null
-var _http_request_busy: = false
+var _http_get_request_busy := false
+var _http_post_request_busy := false
 var _retry_time := 2.0
 
-@onready var http_request := $HTTPRequest
+@onready var http_get_request := $HTTPGetRequest
+@onready var http_post_request := $HTTPPostRequest
 @onready var retry_timer := $RetryTimer
 
 
@@ -80,25 +82,25 @@ func post_guest_score(leaderboard_id: String, score: float, nickname := "", meta
 
 	if success and nickname.length() > 15:
 		success = false
-		printerr("Couldn't post score because nickname is greater than 15 characters")
+		printerr("[Quiver Leaderboards] Couldn't post score because nickname is greater than 15 characters")
 		# Don't retry since this will never work
 		retry = false
 
 	if success and not PlayerAccounts.is_logged_in():
 		success = await PlayerAccounts.register_guest()
 		if not success:
-			printerr("Couldn't register guest account")
+			printerr("[Quiver Leaderboards] Couldn't register guest account")
 
-	if success and _http_request_busy:
-		printerr("Couldn't post score because request is in progress")
+	if success and _http_post_request_busy:
+		printerr("[Quiver Leaderboards] Couldn't post score because POST request is in progress")
 		success = false
 
 	if success:
-		_http_request_busy = true
+		_http_post_request_busy = true
 		var url = SERVER_PATH + (POST_SCORE_PATH % leaderboard_id)
 		if timestamp == 0.0:
 			timestamp = Time.get_unix_time_from_system()
-		var error = http_request.request(
+		var error = http_post_request.request(
 			url,
 			["Authorization: Token " + PlayerAccounts.player_token],
 			HTTPClient.METHOD_POST,
@@ -114,7 +116,7 @@ func post_guest_score(leaderboard_id: String, score: float, nickname := "", meta
 			printerr("[Quiver Leaderboards] There was an error posting a score.")
 			success = false
 		else:
-			var response = await http_request.request_completed
+			var response = await http_post_request.request_completed
 			var response_code = response[1]
 			if response_code >= 500:
 				printerr("[Quiver Leaderboards] There was an error posting a score.")
@@ -125,7 +127,7 @@ func post_guest_score(leaderboard_id: String, score: float, nickname := "", meta
 				printerr("[Quiver Leaderboards] There was an irrecoverable error posting a score.")
 				retry = false
 				success = false
-		_http_request_busy = false
+		_http_post_request_busy = false
 
 	if not success and retry:
 		_handle_failed_post("guest", leaderboard_id, float(score), nickname, metadata, timestamp)
@@ -251,13 +253,14 @@ func _get_scores_base(leaderboard_id: String, token: String, path: String, query
 	if not token:
 		printerr("[Quiver Leaderboards] Can't fetch scores due to missing token")
 		return {"scores": [], "has_more_scores": false, "error": "Missing token"}
-	if _http_request_busy:
-		printerr("Couldn't get scores because request is in progress")
-		return {"scores": [], "has_more_scores": false, "error": "Fetch request already in progres"}
+	if _http_get_request_busy:
+		# If we receive another request while waiting for the previous request,
+		# let's cancel the previous request and begin a new fetch.
+		http_get_request.cancel_request()
 
-	_http_request_busy = true
+	_http_get_request_busy = true
 	var url = SERVER_PATH + path % leaderboard_id + query_string
-	var error = http_request.request(
+	var error = http_get_request.request(
 		url,
 		["Authorization: Token " + token],
 		HTTPClient.METHOD_GET
@@ -267,7 +270,7 @@ func _get_scores_base(leaderboard_id: String, token: String, path: String, query
 		printerr("[Quiver Leaderboards] There was an error fetching scores.")
 		error_msg = "Request failed"
 	else:
-		var response = await http_request.request_completed
+		var response = await http_get_request.request_completed
 		var response_code = response[1]
 		if response_code >= 200 and response_code <= 299:
 			var body = response[3]
@@ -282,7 +285,7 @@ func _get_scores_base(leaderboard_id: String, token: String, path: String, query
 		else:
 			printerr("[Quiver Leaderboards] There was an error fetching scores.")
 			error_msg = "Request failed, HTTP code %d" % response_code
-	_http_request_busy = false
+	_http_get_request_busy = false
 	return {"scores": scores, "has_more_scores": has_more_scores, "error": error_msg}
 
 

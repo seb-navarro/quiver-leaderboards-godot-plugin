@@ -127,6 +127,9 @@ func post_guest_score(leaderboard_id: String, score: float, nickname := "", meta
 				printerr("[Quiver Leaderboards] There was an irrecoverable error posting a score.")
 				retry = false
 				success = false
+			elif response_code == 0:
+				printerr("[Quiver Leaderboards] There was an error posting a score.")
+				success = false
 		_http_post_request_busy = false
 
 	if not success and retry:
